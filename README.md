@@ -5,14 +5,13 @@
 
 [![Windows Build history](https://buildstats.info/appveyor/chart/TomPallister/ocelot-fcfpb?branch=develop&includeBuildsFromPullRequest=false)](https://ci.appveyor.com/project/TomPallister/ocelot-fcfpb/history?branch=develop)
 
-[![Coverage Status](https://coveralls.io/repos/github/TomPallister/Ocelot/badge.svg?branch=develop)](https://coveralls.io/github/TomPallister/Ocelot?branch=develop)
+[![Coverage Status](https://coveralls.io/repos/github/ThreeMammals/Ocelot/badge.svg?branch=develop)](https://coveralls.io/github/ThreeMammals/Ocelot?branch=develop)
 
 # Ocelot
 
 Ocelot is a .NET Api Gateway. This project is aimed at people using .NET running 
 a micro services / service orientated architecture 
-that need a unified point of entry into their system. However it will worth with anything that
-speaks HTTP and run on any platform that asp.net core supports.
+that need a unified point of entry into their system. However it will work with anything that speaks HTTP and run on any platform that asp.net core supports.
 
 In particular I want easy integration with 
 IdentityServer reference and bearer tokens. 
@@ -39,8 +38,9 @@ A quick list of Ocelot's capabilities for more information see the [documentatio
 
 * Routing
 * Request Aggregation
-* Service Discovery with Consul
+* Service Discovery with Consul & Eureka
 * Service Fabric
+* WebSockets
 * Authentication
 * Authorisation
 * Rate Limiting
@@ -51,11 +51,11 @@ A quick list of Ocelot's capabilities for more information see the [documentatio
 * Headers / Query String / Claims Transformation
 * Custom Middleware / Delegating Handlers
 * Configuration / Administration REST API
+* Platform / Cloud Agnostic
 
 ## How to install
 
-Ocelot is designed to work with ASP.NET core only and is currently 
-built to netcoreapp2.0 [this](https://docs.microsoft.com/en-us/dotnet/articles/standard/library) documentation may prove helpful when working out if Ocelot would be suitable for you.
+Ocelot is designed to work with ASP.NET Core only and it targets `netstandard2.0`. This means it can be used anywhere `.NET Standard 2.0` is supported, including `.NET Core 2.0` and `.NET Framework 4.6.1` and up. [This](https://docs.microsoft.com/en-us/dotnet/standard/net-standard) documentation may prove helpful when working out if Ocelot would be suitable for you.
 
 Install Ocelot and it's dependencies using NuGet. 
 

@@ -1,24 +1,24 @@
 namespace Ocelot.Headers
 {
-    using System;
     using System.Collections.Generic;
-    using System.Net.Http;
     using Ocelot.Configuration.Creator;
     using Ocelot.Infrastructure;
-    using Ocelot.Infrastructure.RequestData;
+    using Ocelot.Infrastructure.Extensions;
     using Ocelot.Logging;
+    using Ocelot.Middleware;
 
     public class AddHeadersToResponse : IAddHeadersToResponse
     {
-        private IPlaceholders _placeholders;
-        private IOcelotLogger _logger;
+        private readonly IPlaceholders _placeholders;
+        private readonly IOcelotLogger _logger;
 
         public AddHeadersToResponse(IPlaceholders placeholders, IOcelotLoggerFactory factory)
         {
             _logger = factory.CreateLogger<AddHeadersToResponse>();
             _placeholders = placeholders;
         }
-        public void Add(List<AddHeader> addHeaders, HttpResponseMessage response)
+
+        public void Add(List<AddHeader> addHeaders, DownstreamResponse response)
         {
             foreach(var add in addHeaders)
             {
@@ -28,15 +28,15 @@ namespace Ocelot.Headers
                     
                     if(value.IsError)
                     {
-                        _logger.LogError($"Unable to add header to response {add.Key}: {add.Value}");
+                        _logger.LogWarning($"Unable to add header to response {add.Key}: {add.Value}");
                         continue;
                     }
 
-                    response.Headers.TryAddWithoutValidation(add.Key, value.Data);
+                    response.Headers.Add(new Header(add.Key, new List<string> { value.Data }));
                 }
                 else
                 {
-                    response.Headers.TryAddWithoutValidation(add.Key, add.Value);
+                    response.Headers.Add(new Header(add.Key, new List<string> { add.Value }));
                 }
             }
         }

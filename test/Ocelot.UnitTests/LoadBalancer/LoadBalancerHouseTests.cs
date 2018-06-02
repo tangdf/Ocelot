@@ -4,6 +4,7 @@ using Moq;
 using Ocelot.Configuration;
 using Ocelot.Configuration.Builder;
 using Ocelot.LoadBalancer.LoadBalancers;
+using Ocelot.Middleware;
 using Ocelot.Responses;
 using Ocelot.Values;
 using Shouldly;
@@ -25,13 +26,15 @@ namespace Ocelot.UnitTests.LoadBalancer
         {
             _factory = new Mock<ILoadBalancerFactory>();
             _loadBalancerHouse = new LoadBalancerHouse(_factory.Object);
-            _serviceProviderConfig = new ServiceProviderConfiguration("myType","myHost",123);
+            _serviceProviderConfig = new ServiceProviderConfiguration("myType","myHost",123, string.Empty, "configKey");
         }
 
         [Fact]
         public void should_store_load_balancer_on_first_request()
         {
-            var reRoute = new DownstreamReRouteBuilder().WithReRouteKey("test").Build();
+            var reRoute = new DownstreamReRouteBuilder()
+                .WithLoadBalancerKey("test")
+                .Build();
 
             this.Given(x => x.GivenThereIsALoadBalancer(reRoute, new FakeLoadBalancer()))
                 .Then(x => x.ThenItIsAdded())
@@ -41,7 +44,10 @@ namespace Ocelot.UnitTests.LoadBalancer
         [Fact]
         public void should_not_store_load_balancer_on_second_request()
         {
-            var reRoute = new DownstreamReRouteBuilder().WithLoadBalancer("FakeLoadBalancer").WithReRouteKey("test").Build();
+            var reRoute = new DownstreamReRouteBuilder()
+                .WithLoadBalancerOptions(new LoadBalancerOptions("FakeLoadBalancer", "", 0))
+                .WithLoadBalancerKey("test")
+                .Build();
 
             this.Given(x => x.GivenThereIsALoadBalancer(reRoute, new FakeLoadBalancer()))
                 .When(x => x.WhenWeGetTheLoadBalancer(reRoute))
@@ -52,8 +58,15 @@ namespace Ocelot.UnitTests.LoadBalancer
         [Fact]
         public void should_store_load_balancers_by_key()
         {
-            var reRoute = new DownstreamReRouteBuilder().WithLoadBalancer("FakeLoadBalancer").WithReRouteKey("test").Build();
-            var reRouteTwo = new DownstreamReRouteBuilder().WithLoadBalancer("FakeRoundRobinLoadBalancer").WithReRouteKey("testtwo").Build();
+            var reRoute = new DownstreamReRouteBuilder()
+                .WithLoadBalancerOptions(new LoadBalancerOptions("FakeLoadBalancer", "", 0))
+                .WithLoadBalancerKey("test")
+                .Build();
+            
+            var reRouteTwo = new DownstreamReRouteBuilder()
+                .WithLoadBalancerOptions(new LoadBalancerOptions("FakeRoundRobinLoadBalancer", "", 0))
+                .WithLoadBalancerKey("testtwo")
+                .Build();
 
             this.Given(x => x.GivenThereIsALoadBalancer(reRoute, new FakeLoadBalancer()))
                 .And(x => x.GivenThereIsALoadBalancer(reRouteTwo, new FakeRoundRobinLoadBalancer()))
@@ -77,9 +90,15 @@ namespace Ocelot.UnitTests.LoadBalancer
         [Fact]
         public void should_get_new_load_balancer_if_reroute_load_balancer_has_changed()
         {
-            var reRoute = new DownstreamReRouteBuilder().WithLoadBalancer("FakeLoadBalancer").WithReRouteKey("test").Build();
+            var reRoute = new DownstreamReRouteBuilder()
+                .WithLoadBalancerOptions(new LoadBalancerOptions("FakeLoadBalancer", "", 0))
+                .WithLoadBalancerKey("test")
+                .Build();
 
-            var reRouteTwo = new DownstreamReRouteBuilder().WithLoadBalancer("LeastConnection").WithReRouteKey("test").Build();
+            var reRouteTwo = new DownstreamReRouteBuilder()
+                .WithLoadBalancerOptions(new LoadBalancerOptions("LeastConnection", "", 0))
+                .WithLoadBalancerKey("test")
+                .Build();
 
             this.Given(x => x.GivenThereIsALoadBalancer(reRoute, new FakeLoadBalancer()))
                 .When(x => x.WhenWeGetTheLoadBalancer(reRoute))
@@ -136,7 +155,7 @@ namespace Ocelot.UnitTests.LoadBalancer
 
         class FakeLoadBalancer : ILoadBalancer
         {
-            public Task<Response<ServiceHostAndPort>> Lease()
+            public Task<Response<ServiceHostAndPort>> Lease(DownstreamContext context)
             {
                 throw new NotImplementedException();
             }
@@ -149,7 +168,7 @@ namespace Ocelot.UnitTests.LoadBalancer
 
         class FakeRoundRobinLoadBalancer : ILoadBalancer
         {
-            public Task<Response<ServiceHostAndPort>> Lease()
+            public Task<Response<ServiceHostAndPort>> Lease(DownstreamContext context)
             {
                 throw new NotImplementedException();
             }

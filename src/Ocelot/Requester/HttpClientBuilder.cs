@@ -16,7 +16,7 @@ namespace Ocelot.Requester
         private string _cacheKey;
         private HttpClient _httpClient;
         private IHttpClient _client;
-        private HttpClientHandler _httpclientHandler;
+        private readonly TimeSpan _defaultTimeout;
 
         public HttpClientBuilder(
             IDelegatingHandlerHandlerFactory factory, 
@@ -26,11 +26,15 @@ namespace Ocelot.Requester
             _factory = factory;
             _cacheHandlers = cacheHandlers;
             _logger = logger;
+
+            // This is hardcoded at the moment but can easily be added to configuration
+            // if required by a user request.
+            _defaultTimeout = TimeSpan.FromSeconds(90);
         }
 
-        public IHttpClient Create(DownstreamContext request)
+        public IHttpClient Create(DownstreamContext context)
         {
-            _cacheKey = GetCacheKey(request);
+            _cacheKey = GetCacheKey(context);
 
             var httpClient = _cacheHandlers.Get(_cacheKey);
 
@@ -38,15 +42,44 @@ namespace Ocelot.Requester
             {
                 return httpClient;
             }
-
-            _httpclientHandler = new HttpClientHandler
+            bool useCookies = context.DownstreamReRoute.HttpHandlerOptions.UseCookieContainer;
+            HttpClientHandler httpclientHandler;
+            // Dont' create the CookieContainer if UseCookies is not set ot the HttpClient will complain
+            // under .Net Full Framework
+            if (useCookies)
             {
-                AllowAutoRedirect = request.DownstreamReRoute.HttpHandlerOptions.AllowAutoRedirect,
-                UseCookies = request.DownstreamReRoute.HttpHandlerOptions.UseCookieContainer,
-                CookieContainer = new CookieContainer()
-            };
+                httpclientHandler = new HttpClientHandler
+                {
+                    AllowAutoRedirect = context.DownstreamReRoute.HttpHandlerOptions.AllowAutoRedirect,
+                    UseCookies = context.DownstreamReRoute.HttpHandlerOptions.UseCookieContainer,
+                    CookieContainer = new CookieContainer()
+                };
+            }
+            else
+            {
+                httpclientHandler = new HttpClientHandler
+                {
+                    AllowAutoRedirect = context.DownstreamReRoute.HttpHandlerOptions.AllowAutoRedirect,
+                    UseCookies = context.DownstreamReRoute.HttpHandlerOptions.UseCookieContainer,
+                };
+            }
 
-            _httpClient = new HttpClient(CreateHttpMessageHandler(_httpclientHandler, request.DownstreamReRoute));
+            if (context.DownstreamReRoute.DangerousAcceptAnyServerCertificateValidator)
+            {
+                httpclientHandler.ServerCertificateCustomValidationCallback = (request, certificate, chain, errors) => true;
+
+                _logger
+                    .LogWarning($"You have ignored all SSL warnings by using DangerousAcceptAnyServerCertificateValidator for this DownstreamReRoute, UpstreamPathTemplate: {context.DownstreamReRoute.UpstreamPathTemplate}, DownstreamPathTemplate: {context.DownstreamReRoute.DownstreamPathTemplate}");
+            }
+
+            var timeout = context.DownstreamReRoute.QosOptions.TimeoutValue == 0
+                ? _defaultTimeout 
+                : TimeSpan.FromMilliseconds(context.DownstreamReRoute.QosOptions.TimeoutValue);
+
+            _httpClient = new HttpClient(CreateHttpMessageHandler(httpclientHandler, context.DownstreamReRoute))
+            {
+                Timeout = timeout
+            };
 
             _client = new HttpClientWrapper(_httpClient);
 
@@ -78,9 +111,11 @@ namespace Ocelot.Requester
 
         private string GetCacheKey(DownstreamContext request)
         {
-            var baseUrl = $"{request.DownstreamRequest.RequestUri.Scheme}://{request.DownstreamRequest.RequestUri.Authority}{request.DownstreamRequest.RequestUri.AbsolutePath}";
+            var cacheKey = $"{request.DownstreamRequest.Method}:{request.DownstreamRequest.OriginalString}";
 
-            return baseUrl;
+            this._logger.LogDebug($"Cache key for request is {cacheKey}");
+
+            return cacheKey;
         }
     }
 }

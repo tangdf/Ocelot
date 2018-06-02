@@ -14,6 +14,7 @@ using Ocelot.Configuration;
 using Ocelot.Configuration.Builder;
 using Ocelot.Logging;
 using Ocelot.Middleware;
+using Ocelot.Request.Middleware;
 using Ocelot.Requester;
 using Ocelot.Responses;
 using Shouldly;
@@ -45,10 +46,14 @@ namespace Ocelot.UnitTests.Requester
         [Fact]
         public void should_build_http_client()
         {
+            var qosOptions = new QoSOptionsBuilder()
+                .Build();
+
             var reRoute = new DownstreamReRouteBuilder()
-                .WithIsQos(false)
+                .WithQosOptions(qosOptions)
                 .WithHttpHandlerOptions(new HttpHandlerOptions(false, false, false))
-                .WithReRouteKey("")
+                .WithLoadBalancerKey("")
+                .WithQosOptions(new QoSOptionsBuilder().Build())
                 .Build();
 
             this.Given(x => GivenTheFactoryReturns())
@@ -59,12 +64,38 @@ namespace Ocelot.UnitTests.Requester
         }
 
         [Fact]
+        public void should_log_if_ignoring_ssl_errors()
+        {
+            var qosOptions = new QoSOptionsBuilder()
+                .Build();
+
+            var reRoute = new DownstreamReRouteBuilder()
+                .WithQosOptions(qosOptions)
+                .WithHttpHandlerOptions(new HttpHandlerOptions(false, false, false))
+                .WithLoadBalancerKey("")
+                .WithQosOptions(new QoSOptionsBuilder().Build())
+                .WithDangerousAcceptAnyServerCertificateValidator(true)
+                .Build();
+
+            this.Given(x => GivenTheFactoryReturns())
+                .And(x => GivenARequest(reRoute))
+                .When(x => WhenIBuild())
+                .Then(x => ThenTheHttpClientShouldNotBeNull())
+                .Then(x => ThenTheDangerousAcceptAnyServerCertificateValidatorWarningIsLogged())
+                .BDDfy();
+        }
+
+        [Fact]
         public void should_call_delegating_handlers_in_order()
         {
+            var qosOptions = new QoSOptionsBuilder()
+                .Build();
+
             var reRoute = new DownstreamReRouteBuilder()
-                .WithIsQos(false)
+                .WithQosOptions(qosOptions)
                 .WithHttpHandlerOptions(new HttpHandlerOptions(false, false, false))
-                .WithReRouteKey("")
+                .WithLoadBalancerKey("")
+                .WithQosOptions(new QoSOptionsBuilder().Build())
                 .Build();
 
             var fakeOne = new FakeDelegatingHandler();
@@ -88,10 +119,14 @@ namespace Ocelot.UnitTests.Requester
         [Fact]
         public void should_re_use_cookies_from_container()
         {
+            var qosOptions = new QoSOptionsBuilder()
+                .Build();
+
             var reRoute = new DownstreamReRouteBuilder()
-                .WithIsQos(false)
+                .WithQosOptions(qosOptions)
                 .WithHttpHandlerOptions(new HttpHandlerOptions(false, true, false))
-                .WithReRouteKey("")
+                .WithLoadBalancerKey("")
+                .WithQosOptions(new QoSOptionsBuilder().Build())
                 .Build();
 
             this.Given(_ => GivenADownstreamService())
@@ -105,6 +140,46 @@ namespace Ocelot.UnitTests.Requester
                 .When(_ => WhenICallTheClient("http://localhost:5003"))
                 .Then(_ => ThenTheResponseIsOk())
                 .BDDfy();
+        }
+
+        [Theory]
+        [InlineData("GET")]
+        [InlineData("POST")]
+        [InlineData("PUT")]
+        [InlineData("DELETE")]
+        [InlineData("PATCH")]
+        public void should_add_verb_to_cache_key(string verb)
+        {
+            var client = "http://localhost:5012";
+
+            HttpMethod method = new HttpMethod(verb);
+
+            var qosOptions = new QoSOptionsBuilder()
+                .Build();
+
+            var reRoute = new DownstreamReRouteBuilder()
+                .WithQosOptions(qosOptions)
+                .WithHttpHandlerOptions(new HttpHandlerOptions(false, false, false))
+                .WithLoadBalancerKey("")
+                .WithQosOptions(new QoSOptionsBuilder().Build())
+                .Build();
+
+            this.Given(_ => GivenADownstreamService())
+                .And(_ => GivenARequestWithAUrlAndMethod(reRoute, client, method))
+                .And(_ => GivenTheFactoryReturnsNothing())
+                .And(_ => WhenIBuild())
+                .And(_ => GivenCacheIsCalledWithExpectedKey($"{method.ToString()}:{client}"))
+                .BDDfy();
+        }
+
+        private void GivenCacheIsCalledWithExpectedKey(string expectedKey)
+        {
+            this._cacheHandlers.Verify(x => x.Get(It.Is<string>(p => p.Equals(expectedKey, StringComparison.OrdinalIgnoreCase))), Times.Once);
+        }
+
+        private void ThenTheDangerousAcceptAnyServerCertificateValidatorWarningIsLogged()
+        {
+            _logger.Verify(x => x.LogWarning($"You have ignored all SSL warnings by using DangerousAcceptAnyServerCertificateValidator for this DownstreamReRoute, UpstreamPathTemplate: {_context.DownstreamReRoute.UpstreamPathTemplate}, DownstreamPathTemplate: {_context.DownstreamReRoute.DownstreamPathTemplate}"), Times.Once);
         }
 
         private void GivenTheClientIsCached()
@@ -139,25 +214,28 @@ namespace Ocelot.UnitTests.Requester
                 .UseIISIntegration()
                 .Configure(app =>
                 {
-                    app.Run(async context =>
+                    app.Run(context =>
                     {
                         if (_count == 0)
                         {
                             context.Response.Cookies.Append("test", "0");
                             context.Response.StatusCode = 200;
                             _count++;
-                            return;
+                            return Task.CompletedTask;
                         }
+
                         if (_count == 1)
                         {
                             if (context.Request.Cookies.TryGetValue("test", out var cookieValue) || context.Request.Headers.TryGetValue("Set-Cookie", out var headerValue))
                             {
                                 context.Response.StatusCode = 200;
-                                return;
+                                return Task.CompletedTask;
                             }
 
                             context.Response.StatusCode = 500;
                         }
+
+                        return Task.CompletedTask;
                     });
                 })
                 .Build();
@@ -167,10 +245,15 @@ namespace Ocelot.UnitTests.Requester
 
         private void GivenARequest(DownstreamReRoute downstream)
         {
+            GivenARequestWithAUrlAndMethod(downstream, "http://localhost:5003", HttpMethod.Get);
+        }
+
+        private void GivenARequestWithAUrlAndMethod(DownstreamReRoute downstream, string url, HttpMethod method)
+        {
             var context = new DownstreamContext(new DefaultHttpContext())
             {
                 DownstreamReRoute = downstream,
-                DownstreamRequest = new HttpRequestMessage() { RequestUri = new Uri("http://localhost:5003") },
+                DownstreamRequest = new DownstreamRequest(new HttpRequestMessage() { RequestUri = new Uri(url), Method = method }),
             };
 
             _context = context;
@@ -199,6 +282,7 @@ namespace Ocelot.UnitTests.Requester
                 .Setup(x => x.Get(It.IsAny<DownstreamReRoute>()))
                 .Returns(new OkResponse<List<Func<DelegatingHandler>>>(handlers));
         }
+
         private void GivenTheFactoryReturnsNothing()
         {
             var handlers = new List<Func<DelegatingHandler>>();

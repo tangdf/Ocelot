@@ -14,6 +14,8 @@ using static Rafty.Infrastructure.Wait;
 
 namespace Ocelot.AcceptanceTests
 {
+    using Xunit.Abstractions;
+
     public class ButterflyTracingTests : IDisposable
     {
         private IWebHost _serviceOneBuilder;
@@ -23,9 +25,11 @@ namespace Ocelot.AcceptanceTests
         private string _downstreamPathOne;
         private string _downstreamPathTwo;
         private int _butterflyCalled;
+        private readonly ITestOutputHelper _output;
 
-        public ButterflyTracingTests()
+        public ButterflyTracingTests(ITestOutputHelper output)
         {
+            _output = output;
             _steps = new Steps();
         }
 
@@ -91,20 +95,22 @@ namespace Ocelot.AcceptanceTests
 
             var butterflyUrl = "http://localhost:9618";
 
-            this.Given(x => GivenServiceOneIsRunning("http://localhost:51887", "/api/values", 200, "Hello from Laura", butterflyUrl))
+            this.Given(x => GivenFakeButterfly(butterflyUrl))
+                .And(x => GivenServiceOneIsRunning("http://localhost:51887", "/api/values", 200, "Hello from Laura", butterflyUrl))
                 .And(x => GivenServiceTwoIsRunning("http://localhost:51388", "/api/values", 200, "Hello from Tom", butterflyUrl))
-                .And(x => GivenFakeButterfly(butterflyUrl))
                 .And(x => _steps.GivenThereIsAConfiguration(configuration))
                 .And(x => _steps.GivenOcelotIsRunningUsingButterfly(butterflyUrl))
                 .When(x => _steps.WhenIGetUrlOnTheApiGateway("/api001/values"))
                 .Then(x => _steps.ThenTheStatusCodeShouldBe(HttpStatusCode.OK))
                 .And(x => _steps.ThenTheResponseBodyShouldBe("Hello from Laura"))
-                 .When(x => _steps.WhenIGetUrlOnTheApiGateway("/api002/values"))
-                 .Then(x => _steps.ThenTheStatusCodeShouldBe(HttpStatusCode.OK))
-                 .And(x => _steps.ThenTheResponseBodyShouldBe("Hello from Tom"))
+                .When(x => _steps.WhenIGetUrlOnTheApiGateway("/api002/values"))
+                .Then(x => _steps.ThenTheStatusCodeShouldBe(HttpStatusCode.OK))
+                .And(x => _steps.ThenTheResponseBodyShouldBe("Hello from Tom"))
                 .BDDfy();
 
-            var commandOnAllStateMachines = WaitFor(5000).Until(() => _butterflyCalled == 4);
+            var commandOnAllStateMachines = WaitFor(10000).Until(() => _butterflyCalled >= 4);
+
+            _output.WriteLine($"_butterflyCalled is {_butterflyCalled}");
 
             commandOnAllStateMachines.ShouldBeTrue();
         }
@@ -151,8 +157,8 @@ namespace Ocelot.AcceptanceTests
 
             var butterflyUrl = "http://localhost:9618";
 
-            this.Given(x => GivenServiceOneIsRunning("http://localhost:51387", "/api/values", 200, "Hello from Laura", butterflyUrl))
-                .And(x => GivenFakeButterfly(butterflyUrl))
+            this.Given(x => GivenFakeButterfly(butterflyUrl))
+                .And(x => GivenServiceOneIsRunning("http://localhost:51387", "/api/values", 200, "Hello from Laura", butterflyUrl))
                 .And(x => _steps.GivenThereIsAConfiguration(configuration))
                 .And(x => _steps.GivenOcelotIsRunningUsingButterfly(butterflyUrl))
                 .When(x => _steps.WhenIGetUrlOnTheApiGateway("/api001/values"))

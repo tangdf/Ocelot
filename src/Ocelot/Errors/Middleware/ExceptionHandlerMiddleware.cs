@@ -1,10 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Primitives;
-using Ocelot.Configuration.Provider;
-using Ocelot.DownstreamRouteFinder.Middleware;
+using Ocelot.Configuration.Repository;
 using Ocelot.Infrastructure.Extensions;
 using Ocelot.Infrastructure.RequestData;
 using Ocelot.Logging;
@@ -12,74 +9,74 @@ using Ocelot.Middleware;
 
 namespace Ocelot.Errors.Middleware
 {
+    using Configuration;
+
     /// <summary>
     /// Catches all unhandled exceptions thrown by middleware, logs and returns a 500
     /// </summary>
     public class ExceptionHandlerMiddleware : OcelotMiddleware
     {
         private readonly OcelotRequestDelegate _next;
-        private readonly IOcelotLogger _logger;
-        private readonly IOcelotConfigurationProvider _provider;
+        private readonly IInternalConfigurationRepository _configRepo;
         private readonly IRequestScopedDataRepository _repo;
 
         public ExceptionHandlerMiddleware(OcelotRequestDelegate next,
-            IOcelotLoggerFactory loggerFactory, 
-            IOcelotConfigurationProvider provider, 
+            IOcelotLoggerFactory loggerFactory,
+            IInternalConfigurationRepository configRepo, 
             IRequestScopedDataRepository repo)
+                : base(loggerFactory.CreateLogger<ExceptionHandlerMiddleware>())
         {
-            _provider = provider;
+            _configRepo = configRepo;
             _repo = repo;
             _next = next;
-            _logger = loggerFactory.CreateLogger<ExceptionHandlerMiddleware>();
         }
 
         public async Task Invoke(DownstreamContext context)
         {
             try
-            {               
-                await TrySetGlobalRequestId(context);
+            {
+                //try and get the global request id and set it for logs...
+                //should this basically be immutable per request...i guess it should!
+                //first thing is get config
+                var configuration = _configRepo.Get();
 
-                _logger.LogDebug("ocelot pipeline started");
+                if (configuration.IsError)
+                {
+                    throw new Exception($"{MiddlewareName} setting pipeline errors. IOcelotConfigurationProvider returned {configuration.Errors.ToErrorString()}");
+                }
+
+                TrySetGlobalRequestId(context, configuration.Data);
+
+                context.Configuration = configuration.Data;
+
+                Logger.LogDebug("ocelot pipeline started");
 
                 await _next.Invoke(context);
             }
             catch (Exception e)
             {
-                _logger.LogDebug("error calling middleware");
+                Logger.LogDebug("error calling middleware");
 
                 var message = CreateMessage(context, e);
 
-                _logger.LogError(message, e);
+                Logger.LogError(message, e);
                 
                 SetInternalServerErrorOnResponse(context);
             }
 
-            _logger.LogDebug("ocelot pipeline finished");
+            Logger.LogDebug("ocelot pipeline finished");
         }
 
-        private async Task TrySetGlobalRequestId(DownstreamContext context)
+        private void TrySetGlobalRequestId(DownstreamContext context, IInternalConfiguration configuration)
         {
-                //try and get the global request id and set it for logs...
-                //should this basically be immutable per request...i guess it should!
-                //first thing is get config
-                 var configuration = await _provider.Get(); 
-            
-                //if error throw to catch below..
-                if(configuration.IsError)
-                {
-                    throw new Exception($"{MiddlewareName} setting pipeline errors. IOcelotConfigurationProvider returned {configuration.Errors.ToErrorString()}");
-                }
+            var key = configuration.RequestId;
 
-                //else set the request id?
-                var key = configuration.Data.RequestId;
-
-                StringValues upstreamRequestIds;
-                if (!string.IsNullOrEmpty(key) && context.HttpContext.Request.Headers.TryGetValue(key, out upstreamRequestIds))
-                {
-                    //todo fix looking in both places
-                    context.HttpContext.TraceIdentifier = upstreamRequestIds.First();
-                    _repo.Add<string>("RequestId", context.HttpContext.TraceIdentifier);
+            if (!string.IsNullOrEmpty(key) && context.HttpContext.Request.Headers.TryGetValue(key, out var upstreamRequestIds))
+            {
+                context.HttpContext.TraceIdentifier = upstreamRequestIds.First();
             }
+
+            _repo.Add("RequestId", context.HttpContext.TraceIdentifier);
         }
 
         private void SetInternalServerErrorOnResponse(DownstreamContext context)

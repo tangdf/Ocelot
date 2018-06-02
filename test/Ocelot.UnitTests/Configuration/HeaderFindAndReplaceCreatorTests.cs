@@ -124,7 +124,7 @@ namespace Ocelot.UnitTests.Configuration
 
         private void ThenTheLoggerIsCalledCorrectly(string message)
         {
-            _logger.Verify(x => x.LogError(message), Times.Once);
+            _logger.Verify(x => x.LogWarning(message), Times.Once);
         }
 
         [Fact]
@@ -150,7 +150,6 @@ namespace Ocelot.UnitTests.Configuration
                 .BDDfy();
         }
 
-        
         [Fact]
         public void should_add_trace_id_header()
         {
@@ -167,7 +166,45 @@ namespace Ocelot.UnitTests.Configuration
             this.Given(x => GivenTheReRoute(reRoute))
                 .And(x => GivenTheBaseUrlIs("http://ocelot.com/"))
                 .When(x => WhenICreate())
-                .Then(x => ThenTheFollowingAddHeaderIsReturned(expected))
+                .Then(x => ThenTheFollowingAddHeaderToDownstreamIsReturned(expected))
+                .BDDfy();
+        }
+
+        [Fact]
+        public void should_add_downstream_header_as_is_when_no_replacement_is_given()
+        {
+            var reRoute = new FileReRoute
+            {
+                DownstreamHeaderTransform = new Dictionary<string, string>
+                {
+                    {"X-Custom-Header", "Value"},
+                }
+            };
+
+            var expected = new AddHeader("X-Custom-Header", "Value");
+
+            this.Given(x => GivenTheReRoute(reRoute))
+                .And(x => WhenICreate())
+                .Then(x => x.ThenTheFollowingAddHeaderToDownstreamIsReturned(expected))
+                .BDDfy();
+        }
+
+        [Fact]
+        public void should_add_upstream_header_as_is_when_no_replacement_is_given()
+        {
+            var reRoute = new FileReRoute
+            {
+                UpstreamHeaderTransform = new Dictionary<string, string>
+                {
+                    {"X-Custom-Header", "Value"},
+                }
+            };
+
+            var expected = new AddHeader("X-Custom-Header", "Value");
+
+            this.Given(x => GivenTheReRoute(reRoute))
+                .And(x => WhenICreate())
+                .Then(x => x.ThenTheFollowingAddHeaderToUpstreamIsReturned(expected))
                 .BDDfy();
         }
 
@@ -181,10 +218,16 @@ namespace Ocelot.UnitTests.Configuration
             _placeholders.Setup(x => x.Get(It.IsAny<string>())).Returns(new ErrorResponse<string>(new AnyError()));
         }
 
-        private void ThenTheFollowingAddHeaderIsReturned(AddHeader addHeader)
+        private void ThenTheFollowingAddHeaderToDownstreamIsReturned(AddHeader addHeader)
         {
             _result.AddHeadersToDownstream[0].Key.ShouldBe(addHeader.Key);
             _result.AddHeadersToDownstream[0].Value.ShouldBe(addHeader.Value);
+        }
+        
+        private void ThenTheFollowingAddHeaderToUpstreamIsReturned(AddHeader addHeader)
+        {
+            _result.AddHeadersToUpstream[0].Key.ShouldBe(addHeader.Key);
+            _result.AddHeadersToUpstream[0].Value.ShouldBe(addHeader.Value);
         }
 
         private void ThenTheFollowingDownstreamIsReturned(List<HeaderFindAndReplace> downstream)

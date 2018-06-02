@@ -9,7 +9,7 @@ namespace Ocelot.Configuration.Builder
     public class DownstreamReRouteBuilder
     {
         private AuthenticationOptions _authenticationOptions;
-        private string _reRouteKey;
+        private string _loadBalancerKey;
         private string _downstreamPathTemplate;
         private string _upstreamTemplate;
         private UpstreamPathTemplate _upstreamTemplatePattern;
@@ -24,8 +24,7 @@ namespace Ocelot.Configuration.Builder
         private bool _isCached;
         private CacheOptions _fileCacheOptions;
         private string _downstreamScheme;
-        private string _loadBalancer;
-        private bool _useQos;
+        private LoadBalancerOptions _loadBalancerOptions;
         private QoSOptions _qosOptions;
         private HttpHandlerOptions _httpHandlerOptions;
         private bool _enableRateLimiting;
@@ -39,12 +38,15 @@ namespace Ocelot.Configuration.Builder
         private string _key;
         private List<string> _delegatingHandlers;
         private List<AddHeader> _addHeadersToDownstream;
+        private List<AddHeader> _addHeadersToUpstream;
+        private bool _dangerousAcceptAnyServerCertificateValidator;
 
         public DownstreamReRouteBuilder()
         {
             _downstreamAddresses = new List<DownstreamHostAndPort>();
             _delegatingHandlers = new List<string>();
             _addHeadersToDownstream = new List<AddHeader>();
+            _addHeadersToUpstream = new List<AddHeader>();
         }
 
         public DownstreamReRouteBuilder WithDownstreamAddresses(List<DownstreamHostAndPort> downstreamAddresses)
@@ -59,9 +61,9 @@ namespace Ocelot.Configuration.Builder
             return this;
         }
 
-        public DownstreamReRouteBuilder WithLoadBalancer(string loadBalancer)
+        public DownstreamReRouteBuilder WithLoadBalancerOptions(LoadBalancerOptions loadBalancerOptions)
         {
-          _loadBalancer = loadBalancer;
+          _loadBalancerOptions = loadBalancerOptions;
             return this;
         }
 
@@ -149,21 +151,15 @@ namespace Ocelot.Configuration.Builder
             return this;
         }
 
-        public DownstreamReRouteBuilder WithIsQos(bool input)
-        {
-            _useQos = input;
-            return this;
-        }
-
         public DownstreamReRouteBuilder WithQosOptions(QoSOptions input)
         {
             _qosOptions = input;
             return this;
         }
        
-        public DownstreamReRouteBuilder WithReRouteKey(string reRouteKey)
+        public DownstreamReRouteBuilder WithLoadBalancerKey(string loadBalancerKey)
         {
-            _reRouteKey = reRouteKey;
+            _loadBalancerKey = loadBalancerKey;
             return this;
         }
 
@@ -233,6 +229,18 @@ namespace Ocelot.Configuration.Builder
             return this;
         }
 
+        public DownstreamReRouteBuilder WithAddHeadersToUpstream(List<AddHeader> addHeadersToUpstream)
+        {
+            _addHeadersToUpstream = addHeadersToUpstream;
+            return this;
+        }
+
+        public DownstreamReRouteBuilder WithDangerousAcceptAnyServerCertificateValidator(bool dangerousAcceptAnyServerCertificateValidator)
+        {
+            _dangerousAcceptAnyServerCertificateValidator = dangerousAcceptAnyServerCertificateValidator;
+            return this;
+        }
+
         public DownstreamReRoute Build()
         {
             return new DownstreamReRoute(
@@ -245,13 +253,12 @@ namespace Ocelot.Configuration.Builder
                 _httpHandlerOptions, 
                 _useServiceDiscovery, 
                 _enableRateLimiting, 
-                _useQos, 
                 _qosOptions,
                 _downstreamScheme, 
                 _requestIdHeaderKey, 
                 _isCached, 
                 _fileCacheOptions, 
-                _loadBalancer, 
+                _loadBalancerOptions, 
                 _rateLimitOptions,
                 _routeClaimRequirement, 
                 _claimToQueries, 
@@ -261,9 +268,11 @@ namespace Ocelot.Configuration.Builder
                 _isAuthorised, 
                 _authenticationOptions, 
                 new PathTemplate(_downstreamPathTemplate),
-                _reRouteKey,
+                _loadBalancerKey,
                 _delegatingHandlers,
-                _addHeadersToDownstream);
+                _addHeadersToDownstream,
+                _addHeadersToUpstream,
+                _dangerousAcceptAnyServerCertificateValidator);
         }
     }
 }

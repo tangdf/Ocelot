@@ -13,6 +13,7 @@ namespace Ocelot.UnitTests.LoadBalancer
     using Ocelot.LoadBalancer.LoadBalancers;
     using Ocelot.LoadBalancer.Middleware;
     using Ocelot.Logging;
+    using Ocelot.Request.Middleware;
     using Ocelot.Responses;
     using Ocelot.Values;
     using Shouldly;
@@ -39,13 +40,13 @@ namespace Ocelot.UnitTests.LoadBalancer
             _loadBalancerHouse = new Mock<ILoadBalancerHouse>();
             _loadBalancer = new Mock<ILoadBalancer>();
             _loadBalancerHouse = new Mock<ILoadBalancerHouse>();
-            _downstreamRequest = new HttpRequestMessage(HttpMethod.Get, "");
+            _downstreamRequest = new HttpRequestMessage(HttpMethod.Get, "http://test.com/");
             _downstreamContext = new DownstreamContext(new DefaultHttpContext());
             _loggerFactory = new Mock<IOcelotLoggerFactory>();
             _logger = new Mock<IOcelotLogger>();
             _loggerFactory.Setup(x => x.CreateLogger<LoadBalancingMiddleware>()).Returns(_logger.Object);
             _next = context => Task.CompletedTask;
-            _downstreamContext.DownstreamRequest = _downstreamRequest;
+            _downstreamContext.DownstreamRequest = new DownstreamRequest(_downstreamRequest);
         }
 
         [Fact]
@@ -116,19 +117,21 @@ namespace Ocelot.UnitTests.LoadBalancer
         private void GivenTheConfigurationIs(ServiceProviderConfiguration config)
         {
             _config = config;
-            _downstreamContext.ServiceProviderConfiguration = config;
+            var configuration = new InternalConfiguration(null, null, config, null, null, null, null, null);
+            _downstreamContext.Configuration = configuration;
         }
 
         private void GivenTheDownStreamUrlIs(string downstreamUrl)
         {
             _downstreamRequest.RequestUri = new System.Uri(downstreamUrl);
+            _downstreamContext.DownstreamRequest = new DownstreamRequest(_downstreamRequest);
         }
 
         private void GivenTheLoadBalancerReturnsAnError()
         {
             _getHostAndPortError = new ErrorResponse<ServiceHostAndPort>(new List<Error>() { new ServicesAreNullError($"services were null for bah") });
              _loadBalancer
-                .Setup(x => x.Lease())
+                .Setup(x => x.Lease(It.IsAny<DownstreamContext>()))
                 .ReturnsAsync(_getHostAndPortError);
         }
 
@@ -136,7 +139,7 @@ namespace Ocelot.UnitTests.LoadBalancer
         {
             _hostAndPort = new ServiceHostAndPort("127.0.0.1", 80);
             _loadBalancer
-                .Setup(x => x.Lease())
+                .Setup(x => x.Lease(It.IsAny<DownstreamContext>()))
                 .ReturnsAsync(new OkResponse<ServiceHostAndPort>(_hostAndPort));
         }
 
@@ -185,7 +188,7 @@ namespace Ocelot.UnitTests.LoadBalancer
 
         private void ThenTheDownstreamUrlIsReplacedWith(string expectedUri)
         {
-            _downstreamContext.DownstreamRequest.RequestUri.OriginalString.ShouldBe(expectedUri);
+            _downstreamContext.DownstreamRequest.ToHttpRequestMessage().RequestUri.OriginalString.ShouldBe(expectedUri);
         }
     }
 }

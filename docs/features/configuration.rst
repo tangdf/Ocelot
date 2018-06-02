@@ -1,7 +1,7 @@
 Configuration
 ============
 
-An example configuration can be found `here <https://github.com/TomPallister/Ocelot/blob/develop/test/Ocelot.ManualTest/configuration.json>`_.
+An example configuration can be found `here <https://github.com/TomPallister/Ocelot/blob/develop/test/Ocelot.ManualTest/ocelot.json>`_.
 There are two sections to the configuration. An array of ReRoutes and a GlobalConfiguration. 
 The ReRoutes are the objects that tell Ocelot how to treat an upstream request. The Global 
 configuration is a bit hacky and allows overrides of ReRoute specific settings. It's useful
@@ -64,10 +64,106 @@ Here is an example ReRoute configuration, You don't need to set all of these thi
                 "UseCookieContainer": true,
                 "UseTracing": true
             },
-            "UseServiceDiscovery": false
+            "UseServiceDiscovery": false,
+            "DangerousAcceptAnyServerCertificateValidator": false
         }
 
 More information on how to use these options is below..
+
+Multiple environments
+^^^^^^^^^^^^^^^^^^^^^
+
+Like any other asp.net core project Ocelot supports configuration file names such as configuration.dev.json, configuration.test.json etc. In order to implement this add the following 
+to you 
+
+.. code-block:: csharp
+
+        .ConfigureAppConfiguration((hostingContext, config) =>
+                {
+                    config
+                        .SetBasePath(hostingContext.HostingEnvironment.ContentRootPath)
+                        .AddJsonFile("appsettings.json", true, true)
+                        .AddJsonFile($"appsettings.{hostingContext.HostingEnvironment.EnvironmentName}.json", true, true)
+                        .AddJsonFile("ocelot.json")
+                        .AddJsonFile($"configuration.{hostingContext.HostingEnvironment.EnvironmentName}.json")
+                        .AddEnvironmentVariables();
+                })
+
+Ocelot will now use the environment specific configuration and fall back to ocelot.json if there isnt one.
+
+You also need to set the corresponding environment variable which is ASPNETCORE_ENVIRONMENT. More info on this can be found in the `asp.net core docs <https://docs.microsoft.com/en-us/aspnet/core/fundamentals/environments>`_.
+
+Merging configuration files
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This feature was requested in `Issue 296 <https://github.com/ThreeMammals/Ocelot/issues/296>`_ and allows users to have multiple configuration files to make managing large configurations easier.
+
+Instead of adding the configuration directly e.g. AddJsonFile("ocelot.json") you can call AddOcelot() like below. 
+
+.. code-block:: csharp
+
+    .ConfigureAppConfiguration((hostingContext, config) =>
+        {
+            config
+                .SetBasePath(hostingContext.HostingEnvironment.ContentRootPath)
+                .AddJsonFile("appsettings.json", true, true)
+                .AddJsonFile($"appsettings.{hostingContext.HostingEnvironment.EnvironmentName}.json", true, true)
+                .AddOcelot()
+                .AddEnvironmentVariables();
+        })
+
+In this scenario Ocelot will look for any files that match the pattern (?i)ocelot.([a-zA-Z0-9]*).json and then merge these together. If you want to set the GlobalConfiguration property you must have a file called ocelot.global.json. 
+
+The way Ocelot merges the files is basically load them, loop over them, add any ReRoutes, add any AggregateReRoutes and if the file is called ocelot.global.json add the GlobalConfiguration aswell as any ReRoutes or AggregateReRoutes. Ocelot will then save the merged configuration to a file called ocelot.json and this will be used as the source of truth while ocelot is running.
+
+At the moment there is no validation at this stage it only happens when Ocelot validates the final merged configuration. This is something to be aware of when you are investigating problems. I would advise always checking what is in ocelot.json if you have any problems.
+
+Store configuration in consul
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If you add the following when you register your services Ocelot will attempt to store and retrieve its configuration in consul KV store.
+
+.. code-block:: csharp
+
+ services
+    .AddOcelot()
+    .AddStoreOcelotConfigurationInConsul();
+
+You also need to add the following to your ocelot.json. This is how Ocelot
+finds your Consul agent and interacts to load and store the configuration from Consul.
+
+.. code-block:: json
+
+    "GlobalConfiguration": {
+        "ServiceDiscoveryProvider": {
+            "Host": "localhost",
+            "Port": 9500
+        }
+    }
+
+I decided to create this feature after working on the raft consensus algorithm and finding out its super hard. Why not take advantage of the fact Consul already gives you this! 
+I guess it means if you want to use Ocelot to its fullest you take on Consul as a dependency for now.
+
+This feature has a 3 second ttl cache before making a new request to your local consul agent.
+
+Configuration Key
+-----------------
+
+If you are using Consul for configuration (or other providers in the future) you might want to key your configurations so you can have multiple configurations :) This feature was requested in `issue 346 <https://github.com/ThreeMammals/Ocelot/issues/346>`_! In order to specify the key you need to set the ConfigurationKey property in the ServiceDiscoveryProvider section of the configuration json file e.g.
+
+.. code-block:: json
+
+    "GlobalConfiguration": {
+        "ServiceDiscoveryProvider": {
+            "Host": "localhost",
+            "Port": 9500,
+            "ConfigurationKey": "Oceolot_A"
+        }
+    }
+
+In this example Ocelot will use Oceolot_A as the key for your configuration when looking it up in Consul.
+
+If you do not set the ConfigurationKey Ocelot will use the string InternalConfiguration as the key.
 
 Follow Redirects / Use CookieContainer 
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -85,53 +181,13 @@ that means each request gets a new client and therefore a new cookie container. 
 requests. This would also mean that subsequent requests dont use the cookies from the previous response! All in all not a great situation. I would avoid setting 
 UseCookieContainer to true unless you have a really really good reason. Just look at your response headers and forward the cookies back with your next request! 
 
-Multiple environments
-^^^^^^^^^^^^^^^^^^^^^
+SSL Errors
+^^^^^^^^^^
 
-Like any other asp.net core project Ocelot supports configuration file names such as configuration.dev.json, configuration.test.json etc. In order to implement this add the following 
-to you 
-
-.. code-block:: csharp
-
-        .ConfigureAppConfiguration((hostingContext, config) =>
-                {
-                    config
-                        .SetBasePath(hostingContext.HostingEnvironment.ContentRootPath)
-                        .AddJsonFile("appsettings.json", true, true)
-                        .AddJsonFile($"appsettings.{hostingContext.HostingEnvironment.EnvironmentName}.json", true, true)
-                        .AddJsonFile("configuration.json")
-                        .AddJsonFile($"configuration.{hostingContext.HostingEnvironment.EnvironmentName}.json")
-                        .AddEnvironmentVariables();
-                })
-
-Ocelot should now use the environment specific configuration and fall back to configuration.json if there isnt one.
-
-You also need to set the corresponding environment variable which is ASPNETCORE_ENVIRONMENT. More info on this can be found in the `asp.net core docs <https://docs.microsoft.com/en-us/aspnet/core/fundamentals/environments>`_.
-
-Store configuration in consul
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-If you add the following when you register your services Ocelot will attempt to store and retrieve its configuration in consul KV store.
-
-.. code-block:: csharp
-
- services
-    .AddOcelot()
-    .AddStoreOcelotConfigurationInConsul();
-
-You also need to add the following to your configuration.json. This is how Ocelot
-finds your Consul agent and interacts to load and store the configuration from Consul.
+Id you want to ignore SSL warnings / errors set the following in your ReRoute config.
 
 .. code-block:: json
 
-    "GlobalConfiguration": {
-        "ServiceDiscoveryProvider": {
-            "Host": "localhost",
-            "Port": 9500
-        }
-    }
+    "DangerousAcceptAnyServerCertificateValidator": false
 
-I decided to create this feature after working on the raft consensus algorithm and finding out its super hard. Why not take advantage of the fact Consul already gives you this! 
-I guess it means if you want to use Ocelot to its fullest you take on Consul as a dependency for now.
-
-This feature has a 3 second ttl cache before making a new request to your local consul agent.
+I don't reccomend doing this, I suggest creating your own certificate and then getting it trusted by your local / remote machine if you can.

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using Butterfly.Client.Tracing;
 using Microsoft.Extensions.DependencyInjection;
 using Ocelot.Configuration;
 using Ocelot.Logging;
@@ -67,7 +68,7 @@ namespace Ocelot.Requester
                 handlers.Add(() => (DelegatingHandler)_factory.Get());
             }
 
-            if (request.IsQos)
+            if (request.QosOptions.UseQos)
             {
                 var qosProvider = _qosProviderHouse.Get(request);
 
